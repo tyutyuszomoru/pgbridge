@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-# pgbridge
-Linux service that listens on databases to carry out predefined actions (sending mail, loading csv, file actions and sql on other databases)
-=======
 # PostgreSQL Bridge (pgbridge)
 
 A daemon service that acts as a bridge between PostgreSQL databases and external systems, using PostgreSQL's LISTEN/NOTIFY mechanism for asynchronous event processing.
