@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go test:*)",
+      "Bash(TEST_DATABASE_URL=\"postgres://tyutyu:801031@localhost:5432/postgres?sslmode=disable\" go test:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go build:*)",
+      "Bash(PGPASSWORD=801031 psql:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
