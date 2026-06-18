@@ -28,17 +28,21 @@ func LoadConfigFromDatabase(centralConnStr string, log *logger.Logger) (*Config,
 	}
 	defer pool.Close()
 
-	// Query the configuration view
+	// Query the configuration view.
+	// sp.connection_string is built by the trg_pgb_connection_string trigger:
+	// it uses pgb_role/pgb_password when set, otherwise falls back to the
+	// instance owner's connection string — so we always use it here.
 	query := `
 		SELECT
 			ps.short_name || ' ' || si.db_name as db_name,
-			si.db_connection_string as conn_string,
+			sp.connection_string as conn_string,
 			sp.pgb_services as services
 		FROM sw_pgb sp
 		LEFT JOIN sw_instance si ON si.id = sp.sw_instance_id
 		LEFT JOIN ps_sw ps ON ps.id = si.sw_id
 		WHERE sp.pgb_services IS NOT NULL
 		  AND array_length(sp.pgb_services, 1) > 0
+		  AND sp.connection_string IS NOT NULL
 		ORDER BY ps.short_name, si.db_name
 	`
 

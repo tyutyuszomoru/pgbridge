@@ -121,6 +121,7 @@ func (n *NotifyModule) createNotificationTable(ctx context.Context) error {
 			criticality SMALLINT DEFAULT 1 NOT NULL,
 			is_sent BOOLEAN DEFAULT false NOT NULL,
 			sent_ts TIMESTAMP,
+			is_seen BOOLEAN DEFAULT false NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			CONSTRAINT valid_criticality CHECK (criticality >= 1 AND criticality <= 5)
@@ -140,6 +141,8 @@ func (n *NotifyModule) createIndexes(ctx context.Context) error {
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_pgb_notify_is_sent
 			ON pgb.pgb_notify(is_sent) WHERE is_sent = false;`,
+		`CREATE INDEX IF NOT EXISTS idx_pgb_notify_is_seen
+			ON pgb.pgb_notify(is_seen) WHERE is_seen = false;`,
 		`CREATE INDEX IF NOT EXISTS idx_pgb_notify_user_email
 			ON pgb.pgb_notify(user_email);`,
 		`CREATE INDEX IF NOT EXISTS idx_pgb_notify_created_at

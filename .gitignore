@@ -27,6 +27,13 @@ go.work.sum
 # env file
 .env
 
+# Compiled binaries
+/pgbridge
+/bin/
+
+# Config files (contain local connection strings)
+config/*.conf
+
 # Editor/IDE
 # .idea/
 # .vscode/

@@ -239,14 +239,15 @@ func CreateTrigger(ctx context.Context, pool *pgxpool.Pool, log *logger.Logger) 
 		return fmt.Errorf("failed to create trigger function: %w", err)
 	}
 
-	// Create the trigger on sw_instance
+	// Create the trigger on sw_instance.
+	// trg_instance_roles_notify lives in the public schema (not pgb).
 	triggerSQL := `
 		DROP TRIGGER IF EXISTS S01_instance_roles_notify ON sw_instance;
 
 		CREATE TRIGGER S01_instance_roles_notify
 		AFTER INSERT ON sw_instance
 		FOR EACH ROW
-		EXECUTE FUNCTION pgb.trg_instance_roles_notify();
+		EXECUTE FUNCTION public.trg_instance_roles_notify();
 	`
 
 	if _, err := pool.Exec(ctx, triggerSQL); err != nil {

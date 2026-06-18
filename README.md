@@ -806,111 +806,64 @@ WHERE id IN (SELECT id FROM pgb.pgb_notify WHERE is_sent = false);
 
 ## Configuration
 
-pgbridge supports two configuration methods:
+pgbridge reads all database-to-module mappings from `pansoinco_suite`. The only local file needed is `central.conf` — a single line pointing at pansoinco_suite.
 
-1. **Database-based Configuration** (Recommended) - Centralized configuration in `pansoinco_suite`
-2. **File-based Configuration** (Legacy) - Traditional configuration file
+### central.conf
 
-### Database-Based Configuration (Recommended)
+Default path: `/etc/pgbridge/central.conf`. Override via CLI arg or env var:
 
-Load database connections dynamically from the central `pansoinco_suite` database:
-
-**Benefits:**
-- ✅ Centralized management - all configurations in one place
-- ✅ Dynamic updates - no need to restart pgbridge for config changes
-- ✅ Integrated with existing PanSoinco infrastructure
-- ✅ Audit trail - all config changes tracked in database
-
-**Setup:**
-
-1. Configure your databases in `pansoinco_suite`:
-   ```sql
-   -- Databases are managed via sw_instance, sw_pgb, and ps_sw tables
-   -- The view automatically formats them for pgbridge
-
-   -- View the current configuration:
-   SELECT
-       ps.short_name || ' ' || si.db_name as "Database Name",
-       si.db_connection_string as "Connection String",
-       '[' || array_to_string(sp.pgb_services, ',') || ']' as "PGB Services"
-   FROM sw_pgb sp
-   LEFT JOIN sw_instance si ON si.id = sp.sw_instance_id
-   LEFT JOIN ps_sw ps ON ps.id = si.sw_id
-   WHERE sp.pgb_services IS NOT NULL;
-   ```
-
-2. Run pgbridge with database config:
-   ```bash
-   # Use default central config (/etc/pgbridge/central.conf)
-   pgbridge --db-config
-
-   # Or specify custom central config path
-   pgbridge --db-config /path/to/central.conf
-   ```
-
-3. Central config file (`/etc/pgbridge/central.conf`):
-   ```
-   # Connection string to pansoinco_suite
-   postgres://pgb:password@central-host:5432/pansoinco_suite?sslmode=require
-   ```
-
-### File-Based Configuration (Legacy)
-
-Create `/etc/pgbridge/pgbridge.conf`:
-
-```
-# Format: database_name, connection_string, [module1, module2, ...]
-# Lines starting with # are comments
-
-# Example with mail and notify modules
-production_db, postgres://pgb:password@db.example.com:5432/production?sslmode=require, [pgb_mail, pgb_notify]
-
-# Example with async module (use with caution)
-analytics_db, postgres://pgb:password@localhost:5432/analytics, [pgb_async, pgb_csv]
-
-# Example with minimal modules
-app_db, postgres://pgb:password@10.0.1.50:5432/myapp, [pgb_mail]
-```
-
-Run with file config:
 ```bash
-pgbridge /etc/pgbridge/pgbridge.conf
+pgbridge                                      # uses /etc/pgbridge/central.conf
+pgbridge /path/to/central.conf                # explicit path
+PGBRIDGE_CENTRAL_CONFIG=/path pgbridge        # env var
 ```
 
-**Configuration Notes:**
-- Database names must be unique
-- Connection strings support standard PostgreSQL connection URIs
-- At least one module must be specified per database
-- Complex connection strings with query parameters are supported
+File content — just the connection string:
+
+```
+postgres://pgb:password@localhost:5432/pansoinco_suite
+```
+
+### Adding a database to pgbridge
+
+All configuration lives in `pansoinco_suite`. Insert a row into `sw_pgb` linking the target `sw_instance` to one or more `pgb_services`:
+
+```sql
+-- Check what's currently configured
+SELECT
+    ps.short_name || ' ' || si.db_name AS "Database",
+    sp.connection_string                AS "Connection",
+    sp.pgb_services                     AS "Modules"
+FROM sw_pgb sp
+JOIN sw_instance si ON si.id = sp.sw_instance_id
+JOIN ps_sw ps       ON ps.id = si.sw_id
+ORDER BY ps.short_name, si.db_name;
+
+-- Add a new database (connection_string is built automatically by trigger)
+INSERT INTO sw_pgb (sw_instance_id, pgb_role, pgb_password, pgb_services)
+VALUES (
+    <sw_instance.id>,          -- target instance
+    'pgb',                     -- role to connect as (NULL = use instance owner)
+    'strong_password',         -- password (NULL = use instance owner)
+    '{pgb_mail, pgb_notify}'   -- modules to enable
+);
+```
+
+The `B1_connection_string` trigger on `sw_pgb` builds `connection_string` automatically from the instance host/port/name and the supplied role/password.
 
 ### Security Best Practices
 
-1. **Use SSL/TLS for connections:**
-   ```
-   postgres://pgb:pass@host:5432/db?sslmode=require
-   ```
-
-2. **Restrict configuration file permissions:**
+1. **Restrict central.conf permissions:**
    ```bash
-   chmod 600 /etc/pgbridge/pgbridge.conf
-   chown pgbridge:pgbridge /etc/pgbridge/pgbridge.conf
+   chmod 600 /etc/pgbridge/central.conf
+   chown pgbridge:pgbridge /etc/pgbridge/central.conf
    ```
 
-3. **Use strong passwords:**
-   - Minimum 16 characters
-   - Mix of letters, numbers, and symbols
-   - Consider using a password manager or secrets management system
+2. **Use a dedicated pgb role per instance** — set `pgb_role`/`pgb_password` on each `sw_pgb` row rather than using the instance owner account.
 
-4. **Network security:**
-   - Configure `pg_hba.conf` to restrict connections
-   - Use host-based authentication
-   - Consider using certificate-based authentication
+3. **Network security** — use SSH tunnels for cross-host connections; never expose PostgreSQL ports to the internet.
 
-5. **For pgb_async module:**
-   - Audit all SQL statements before execution
-   - Implement application-level access controls
-   - Log all async operations
-   - Consider using database audit extensions
+4. **For pgb_async module** — audit all SQL before writing to `pgb.pgb_async`; grant only the minimum required permissions to the pgb role.
 
 ## Installation
 
@@ -928,10 +881,10 @@ go build -o bin/pgbridge cmd/pgbridge/main.go
 sudo cp bin/pgbridge /usr/local/bin/
 sudo chmod +x /usr/local/bin/pgbridge
 
-# Create configuration directory
+# Create central config
 sudo mkdir -p /etc/pgbridge
-sudo cp config/pgbridge.conf.example /etc/pgbridge/pgbridge.conf
-sudo chmod 600 /etc/pgbridge/pgbridge.conf
+sudo sh -c 'echo "postgres://pgb:password@localhost:5432/pansoinco_suite" > /etc/pgbridge/central.conf'
+sudo chmod 600 /etc/pgbridge/central.conf
 ```
 
 ### Systemd Service (Linux)
@@ -948,7 +901,7 @@ Wants=postgresql.service
 Type=simple
 User=pgbridge
 Group=pgbridge
-ExecStart=/usr/local/bin/pgbridge -config /etc/pgbridge/pgbridge.conf
+ExecStart=/usr/local/bin/pgbridge /etc/pgbridge/central.conf
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -959,7 +912,6 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/pgbridge
 
 [Install]
 WantedBy=multi-user.target
@@ -1009,18 +961,27 @@ TEST_DATABASE_URL="postgres://user:pass@localhost:5432/pgbridge_test?sslmode=dis
 
 Before adding a database to pgbridge:
 
-- [ ] Create `pgb` role with strong password
-- [ ] Grant `CONNECT` on target database
-- [ ] Grant `CREATE` on target database (for pgb schema)
-- [ ] Review which modules you need
+- [ ] Create a dedicated role for pgbridge on the target database with a strong password
+- [ ] Grant `CONNECT` on target database to that role
+- [ ] Grant `CREATE` on target database (pgbridge creates the `pgb` schema on first run)
 - [ ] Grant module-specific permissions (see sections above)
-- [ ] If using `pgb_async`: **Carefully review and restrict permissions**
+- [ ] If using `pgb_async`: **carefully review and restrict permissions**
 - [ ] Test connection manually: `psql -U pgb -h hostname -d database`
-- [ ] Add entry to `/etc/pgbridge/pgbridge.conf`
+- [ ] Insert a row into `pansoinco_suite.sw_pgb` for the target `sw_instance`
 - [ ] Restart pgbridge service
 - [ ] Check logs: `journalctl -u pgbridge -f`
-- [ ] Verify `pgb` schema and `pgb_log` table were created
+- [ ] Verify `pgb` schema and `pgb_log` table were created on the target database
 - [ ] Check for `SERVICE_START` entry in `pgb.pgb_log`
+
+### First-time setup on pansoinco_suite itself
+
+Before first run, apply the migrations in order:
+
+```bash
+psql -U tyutyu -d pansoinco_suite -f migrations/fix_connection_string_quoted_password.sql
+psql -U tyutyu -d pansoinco_suite -f migrations/ps_notifications_indexes.sql
+psql -U tyutyu -d pansoinco_suite -f migrations/pansoinco_suite_instance_roles_trigger.sql
+```
 
 ## Monitoring and Troubleshooting
 

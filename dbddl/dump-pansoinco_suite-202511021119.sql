@@ -212,7 +212,7 @@ CREATE FUNCTION public.connection_string(db_owner character varying, db_password
 		v_ret varchar;
 	BEGIN
 	
-	v_ret := 'postgres://' || db_owner || ':''' || db_password || '''@' || db_host || ':' || db_port || '/' || db_name;
+	v_ret := 'postgres://' || db_owner || ':' || db_password || '@' || db_host || ':' || db_port || '/' || db_name;
 
 	RETURN v_ret;
 
@@ -2156,14 +2156,6 @@ CREATE INDEX idx_pgb_notify_is_sent ON pgb.pgb_notify USING btree (is_sent) WHER
 --
 
 CREATE INDEX idx_pgb_notify_user_email ON pgb.pgb_notify USING btree (user_email);
-
-
---
--- TOC entry 4140 (class 2620 OID 19354)
--- Name: pgb_notify S01_send_notification; Type: TRIGGER; Schema: pgb; Owner: tyutyu
---
-
-CREATE TRIGGER "S01_send_notification" BEFORE INSERT ON pgb.pgb_notify FOR EACH ROW EXECUTE FUNCTION pgb.trg_pgb_send_notification();
 
 
 --
